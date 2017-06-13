@@ -24,22 +24,23 @@
 namespace maxscale
 {
 
-/**
- * The state of the backend server reference
- */
-enum bref_state
-{
-    BREF_IN_USE           = 0x01,
-    BREF_WAITING_RESULT   = 0x02, /**< for session commands only */
-    BREF_QUERY_ACTIVE     = 0x04, /**< for other queries */
-    BREF_CLOSED           = 0x08,
-};
 
 class Backend
 {
     Backend(const Backend&);
     Backend& operator =(const Backend&);
 public:
+    /**
+     * Internal state of the backend
+     */
+    enum bref_state
+    {
+        IN_USE           = 0x01, /**< Backend has been taken into use */
+        WAITING_RESULT   = 0x02, /**< Waiting for a reply */
+        CLOSED           = 0x04, /**< Backend is no longer in use */
+        FATAL_FAILURE    = 0x08  /**< Backend references that should be dropped */
+    };
+
     /**
      * @brief Create new Backend
      *
@@ -82,20 +83,6 @@ public:
     size_t session_command_count() const;
 
     /**
-     * @brief Clear state
-     *
-     * @param state State to clear
-     */
-    void clear_state(enum bref_state state);
-
-    /**
-     * @brief Set state
-     *
-     * @param state State to set
-     */
-    void set_state(enum bref_state state);
-
-    /**
      * @brief Get pointer to server reference
      *
      * @return Pointer to server reference
@@ -116,7 +103,7 @@ public:
      *
      * This will close all active connections created by the backend.
      */
-    void close();
+    void close(bool fatal = false);
 
     /**
      * @brief Get a pointer to the internal DCB
@@ -128,11 +115,26 @@ public:
     /**
      * @brief Write data to the backend server
      *
-     * @param buffer Buffer containing the data to write
+     * @param buffer          Buffer containing the data to write
+     * @param expect_response Whether to expect a response to the query
      *
      * @return True if data was written successfully
      */
-    bool write(GWBUF* buffer);
+    bool write(GWBUF* buffer, bool expect_response = true);
+
+    /**
+     * @brief Write an authentication switch request to the backend server
+     *
+     * @param buffer Buffer containing the authentication switch request
+     *
+     * @return True if request was successfully written
+     */
+    bool auth(GWBUF* buffer);
+
+    /**
+     * @brief Mark that a reply to a query was received and processed
+     */
+    void ack_write();
 
     /**
      * @brief Store a command
@@ -166,13 +168,6 @@ public:
     bool is_waiting_result() const;
 
     /**
-     * @brief Check if a query is active
-     *
-     * @return True if a query is active
-     */
-    bool is_query_active() const;
-
-    /**
      * @brief Check if the backend is closed
      *
      * @return True if the backend is closed
@@ -180,6 +175,21 @@ public:
     bool is_closed() const;
 
 private:
+    /**
+     * @brief Clear state
+     *
+     * @param state State to clear
+     */
+    void clear_state(enum bref_state state);
+
+    /**
+     * @brief Set state
+     *
+     * @param state State to set
+     */
+    void set_state(enum bref_state state);
+
+
     bool               m_closed;           /**< True if a connection has been opened and closed */
     SERVER_REF*        m_backend;          /**< Backend server */
     DCB*               m_dcb;              /**< Backend DCB */
